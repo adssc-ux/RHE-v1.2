@@ -294,7 +294,7 @@
     <button onclick="abrirModalSalario()" style="background:rgba(255,223,0,0.2); border-color:#ffdf00;">
         <span class="icon">⚙️</span> Salário Base
     </button>
-    <div class="versao">v3.3 • Completo</div>
+    <div class="versao">v3.4 • Saldo Sobreaviso</div>
 </div>
 
 <!-- ===== CONTEÚDO PRINCIPAL ===== -->
@@ -607,7 +607,6 @@
         }
     }
 
-    // Função para converter string formatada para número
     function parseMoeda(str) {
         if (!str) return 0;
         let val = str.replace(/\./g, '').replace(',', '.');
@@ -722,6 +721,8 @@
         if (horasTotais <= 0) { alert('Período sem horas válidas.'); return; }
         let novo = { id: Date.now(), dataInicio: di, horaInicio: hi, dataFim: df, horaFim: hf, horasTotais, horasUsadas: 0, motivo: motivo || 'Sobreaviso' };
         sobreavisos.push(novo);
+        // Ordenar por data de início (mais recente primeiro)
+        sobreavisos.sort((a,b) => new Date(b.dataInicio) - new Date(a.dataInicio));
         localStorage.setItem('sobreavisos', JSON.stringify(sobreavisos));
         limparFormSobreaviso();
         fecharModal('modalSobreaviso');
@@ -802,6 +803,7 @@
     function renderizarTabelaSobreavisoCompleta() {
         let tbody = document.getElementById('tabelaSobreavisoCompleta');
         tbody.innerHTML = '';
+        // Já estão ordenados por data (mais recente primeiro)
         for (let s of sobreavisos) {
             let saldo = s.horasTotais - (s.horasUsadas||0);
             let periodo = formatarPeriodo(s.dataInicio, s.horaInicio, s.dataFim, s.horaFim);
@@ -907,6 +909,8 @@
             periodoId: periodoVinculado ? periodoVinculado.id : null
         };
         registros.push(novo);
+        // Ordenar por data de início (mais recente primeiro)
+        registros.sort((a,b) => new Date(b.startDate) - new Date(a.startDate));
         localStorage.setItem('horasExtrasPlus', JSON.stringify(registros));
         atualizarBancoAutomatico();
         fecharModal('modalHorasExtras');
@@ -982,7 +986,7 @@
             periodoId: periodoVinculado ? periodoVinculado.id : null
         };
         registros.push(novoReg);
-        registros.sort((a,b) => new Date(a.startDate) - new Date(b.startDate));
+        registros.sort((a,b) => new Date(b.startDate) - new Date(a.startDate));
         localStorage.setItem('horasExtrasPlus', JSON.stringify(registros));
         atualizarBancoAutomatico();
         fecharModal('modalEditHorasExtras');
@@ -1041,6 +1045,8 @@
         let tbody = document.getElementById('tabelaRegistros');
         tbody.innerHTML = '';
         let filtrados = aplicarFiltros();
+        // Ordenar por data (mais recente primeiro)
+        filtrados.sort((a,b) => new Date(b.startDate) - new Date(a.startDate));
         let totalHoras=0, totalNot=0, totalEx=0, totalNoAd=0, totalG=0;
         filtrados.forEach(r => {
             totalHoras += r.horas; totalNot += r.horasNoturnas; totalEx += r.valorExtra; totalNoAd += r.valorNoturnoAdicional; totalG += r.valor;
@@ -1071,7 +1077,7 @@
         document.getElementById('filtroStatus').innerHTML = ativos.length ? `Filtros: ${ativos.join(' | ')}` : 'Mostrando apenas registros da competência atual (16-15)';
         document.getElementById('totaisContainer').innerHTML = `📊 Total horas: ${formatHorasMinutos(totalHoras)} (${formatHorasMinutos(totalNot)} noturnas)<br>💰 Valor Extra: R$ ${formatarMoeda(totalEx)} &nbsp;|&nbsp;🌙 Adicional Noturno: R$ ${formatarMoeda(totalNoAd)} &nbsp;|&nbsp;🧾 Soma Total: R$ ${formatarMoeda(totalG)} &nbsp;|&nbsp; ${filtrados.length} registro(s)`;
         document.getElementById('resumoHorasExtras').innerHTML = formatHorasMinutos(totalHoras);
-        let ultimos = filtrados.slice(-3);
+        let ultimos = filtrados.slice(0, 3);
         let tbodyUltimos = document.getElementById('ultimosRegistros');
         tbodyUltimos.innerHTML = '';
         for (let u of ultimos) {
@@ -1268,12 +1274,15 @@
         rubricasAtuais = rubricas;
     }
 
-    function horasSobreavisoNaCompetencia(comp) {
+    // Função que calcula o saldo de sobreaviso na competência (considerando horas compensadas)
+    function saldoSobreavisoNaCompetencia(comp) {
         let [mes, ano] = comp.split('/');
         let inicioComp = new Date(parseInt(ano), parseInt(mes)-1, 16);
         let fimComp = new Date(parseInt(ano), parseInt(mes), 15);
         fimComp.setHours(23,59,59,999);
-        let total = 0;
+
+        // Total de horas de sobreaviso brutas na competência (soma das horas líquidas de cada período que intersecta)
+        let horasBrutas = 0;
         for (let s of sobreavisos) {
             let inicioS = new Date(`${s.dataInicio}T${s.horaInicio}:00`);
             let fimS = new Date(`${s.dataFim}T${s.horaFim}:00`);
@@ -1285,9 +1294,22 @@
                 if (isHorarioSobreaviso(curr, curr.getHours(), curr.getMinutes())) minutos++;
                 curr.setMinutes(curr.getMinutes() + 1);
             }
-            total += minutos / 60;
+            horasBrutas += minutos / 60;
         }
-        return total;
+
+        // Total de horas compensadas via horas extras na competência (campo horasCompensadas)
+        let horasCompensadas = 0;
+        for (let reg of registros) {
+            let dt = new Date(`${reg.startDate}T${reg.startTime}:00`);
+            let compReg = getCompetencia(dt);
+            if (compReg === comp && reg.compensadoSobreaviso && reg.horasCompensadas > 0) {
+                horasCompensadas += reg.horasCompensadas;
+            }
+        }
+
+        let saldo = horasBrutas - horasCompensadas;
+        if (saldo < 0) saldo = 0;
+        return saldo;
     }
 
     function buscarLancamentos() {
@@ -1318,7 +1340,7 @@
         const horaBase = getValorHoraBase();
 
         regs.forEach(r => {
-            if (r.compensadoSobreaviso) return;
+            if (r.compensadoSobreaviso) return; // já foram contabilizadas como compensação
             let inicio = new Date(`${r.startDate}T${r.startTime}:00`);
             let fim = new Date(`${r.endDate}T${r.endTime}:00`);
             let horasNoturnas = 0, horasDiurnas = 0;
@@ -1359,14 +1381,17 @@
 
         let dsrDiurno = (valor50D + valor100D) / 6;
         let dsrNoturno = (valor50N + valor100N) / 6;
-        let horasSobreaviso = horasSobreavisoNaCompetencia(competencia);
-        let valorSobreaviso = horasSobreaviso * horaBase * 0.3333;
+
+        // Cálculo do saldo de sobreaviso na competência
+        let saldoSobreaviso = saldoSobreavisoNaCompetencia(competencia);
+        let valorSobreaviso = saldoSobreaviso * horaBase * 0.3333;
+
         let periculosidade = periculosidadeAtiva ? salBase * 0.30 : 0;
 
         let novasRubricas = rubricasPadrao.map(r => {
             let novo = { ...r };
             if (r.ev === 1) { novo.proventos = salBase; novo.ref = '220:00 hs'; }
-            else if (r.ev === 9) { novo.proventos = valorSobreaviso; novo.ref = formatHorasMinutos(horasSobreaviso); }
+            else if (r.ev === 9) { novo.proventos = valorSobreaviso; novo.ref = formatHorasMinutos(saldoSobreaviso); }
             else if (r.ev === 35) { novo.proventos = valor50D; novo.ref = formatHorasMinutos(horas50D); }
             else if (r.ev === 36) { novo.proventos = valor50N; novo.ref = formatHorasMinutos(horas50N); }
             else if (r.ev === 49) { novo.proventos = valor100D; novo.ref = formatHorasMinutos(horas100D); }
@@ -1648,6 +1673,10 @@
         salarioMensal = parseFloat(localStorage.getItem("salarioPlus")) || 0;
         periculosidadeAtiva = localStorage.getItem("periculosidadeAtiva") === 'true';
         insalubridadeAtiva = localStorage.getItem("insalubridadeAtiva") === 'true';
+
+        // Ordenar dados existentes (caso não estejam)
+        registros.sort((a,b) => new Date(b.startDate) - new Date(a.startDate));
+        sobreavisos.sort((a,b) => new Date(b.dataInicio) - new Date(a.dataInicio));
 
         for (let r of registros) {
             let usarSobre = r.compensadoSobreaviso;
