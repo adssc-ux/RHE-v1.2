@@ -294,7 +294,7 @@
     <button onclick="abrirModalSalario()" style="background:rgba(255,223,0,0.2); border-color:#ffdf00;">
         <span class="icon">⚙️</span> Salário Base
     </button>
-    <div class="versao">v3.5 • Assiduidade calculada</div>
+    <div class="versao">v3.6 • Dados limpos</div>
 </div>
 
 <!-- ===== CONTEÚDO PRINCIPAL ===== -->
@@ -420,17 +420,17 @@
             <div class="grid-2col" style="margin-bottom:1rem;">
                 <div>
                     <label><strong>Empresa</strong></label>
-                    <input type="text" id="empresaNome" placeholder="Razão Social" value="EQS ENGENHARIA S.A.">
-                    <input type="text" id="empresaCnpj" placeholder="CNPJ" value="80.464.753/0001-97">
-                    <input type="text" id="empresaCidade" placeholder="Cidade - UF" value="São José - SC">
+                    <input type="text" id="empresaNome" placeholder="Razão Social">
+                    <input type="text" id="empresaCnpj" placeholder="CNPJ">
+                    <input type="text" id="empresaCidade" placeholder="Cidade - UF">
                 </div>
                 <div>
                     <label><strong>Funcionário</strong></label>
-                    <input type="text" id="funcNome" placeholder="Nome" value="PEDRO ALBERTO AMBROSIO ROCHA">
-                    <input type="text" id="funcCpf" placeholder="CPF" value="613.283.233-58">
-                    <input type="text" id="funcCargo" placeholder="Cargo" value="TÉCNICO DE OPERAÇÕES JR">
-                    <input type="text" id="funcAdmissao" placeholder="Data Admissão" value="18/12/2025">
-                    <input type="number" id="funcSalarioBase" placeholder="Salário Base" step="0.01" value="2769.37">
+                    <input type="text" id="funcNome" placeholder="Nome">
+                    <input type="text" id="funcCpf" placeholder="CPF">
+                    <input type="text" id="funcCargo" placeholder="Cargo">
+                    <input type="text" id="funcAdmissao" placeholder="Data Admissão">
+                    <input type="number" id="funcSalarioBase" placeholder="Salário Base" step="0.01">
                 </div>
             </div>
             <div class="table-wrapper">
@@ -1389,7 +1389,7 @@
             else if (r.ev === 59) { novo.proventos = dsrDiurno; novo.ref = formatHorasMinutos((horas50D+horas100D)/6); }
             else if (r.ev === 60) { novo.proventos = dsrNoturno; novo.ref = formatHorasMinutos((horas50N+horas100N)/6); }
             else if (r.ev === 64) { novo.proventos = periculosidade; }
-            else if (r.ev === 1343) { novo.proventos = assiduidade; } // <-- assiduidade calculada
+            else if (r.ev === 1343) { novo.proventos = assiduidade; }
             else if (r.ev === 1556) { novo.proventos = adicionalNoturnoTotal; }
             return novo;
         });
@@ -1658,6 +1658,7 @@
 
     // ===== INICIALIZAÇÃO =====
     window.onload = function() {
+        // Carrega dados existentes sem sobrescrever
         registros = JSON.parse(localStorage.getItem("horasExtrasPlus")) || [];
         sobreavisos = JSON.parse(localStorage.getItem("sobreavisos")) || [];
         lancamentosManuais = JSON.parse(localStorage.getItem("lancamentosManuais")) || [];
@@ -1666,9 +1667,11 @@
         periculosidadeAtiva = localStorage.getItem("periculosidadeAtiva") === 'true';
         insalubridadeAtiva = localStorage.getItem("insalubridadeAtiva") === 'true';
 
+        // Ordenação
         registros.sort((a,b) => new Date(b.startDate) - new Date(a.startDate));
         sobreavisos.sort((a,b) => new Date(b.dataInicio) - new Date(a.dataInicio));
 
+        // Recalcular registros (mantém integridade)
         for (let r of registros) {
             let usarSobre = r.compensadoSobreaviso;
             let vals = calcularRateioPorDia(r.startDate, r.startTime, r.endDate, r.endTime, r.feriadoManual, usarSobre);
@@ -1678,15 +1681,22 @@
         localStorage.setItem('horasExtrasPlus', JSON.stringify(registros));
         atualizarBancoAutomatico();
 
+        // Se houver uma folha salva para o funcionário atual, carregar os dados automaticamente?
+        // Mas para não sobrescrever, deixamos os campos vazios.
+        // O usuário pode carregar manualmente clicando em "Carregar".
+
+        // Definir competência atual
         let hoje = new Date();
         let mes = String(hoje.getMonth() + 1).padStart(2,'0');
         let ano = hoje.getFullYear();
         document.getElementById('folhaCompetencia').value = `${ano}-${mes}`;
 
+        // Inicializar rubricas vazias
         renderizarRubricas(rubricasPadrao);
         calcularFolha();
         mudarPagina('dashboard');
 
+        // Expor funções globalmente
         window.mudarPagina = mudarPagina;
         window.abrirModalHorasExtras = abrirModalHorasExtras;
         window.abrirModalSobreaviso = abrirModalSobreaviso;
